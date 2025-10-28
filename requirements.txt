@@ -1,0 +1,10 @@
+# Selenium相关
+selenium==4.15.2
+
+# 微信个人号
+itchat-uos==1.5.0.dev0
+pillow==10.1.0
+
+# 企业微信机器人（HTTP请求）
+requests==2.31.0
+
