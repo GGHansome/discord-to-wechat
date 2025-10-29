@@ -1,6 +1,7 @@
 version: "3.9"
 services:
   discord-to-wechat:
+    image: discord-to-wechat:latest
     build: .
     container_name: discord-to-wechat
     environment:
@@ -8,7 +9,7 @@ services:
       - TZ=Asia/Shanghai
     volumes:
       - ./chrome_data:/app/chrome_data
-      - ./discord_bridge.log:/app/discord_bridge.log
+      - ./logs:/app/logs
       - ./config.py:/app/config.py:ro
     # 允许 Chrome 在容器中运行
     shm_size: "2g"

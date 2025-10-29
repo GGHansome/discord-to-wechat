@@ -8,3 +8,6 @@ pillow==10.1.0
 # 企业微信机器人（HTTP请求）
 requests==2.31.0
 
+# 时间解析
+python-dateutil==2.9.0.post0
+

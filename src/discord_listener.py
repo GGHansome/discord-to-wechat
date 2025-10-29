@@ -62,6 +62,12 @@ class DiscordListener:
         chrome_options.add_argument('--no-sandbox')
         chrome_options.add_argument('--disable-dev-shm-usage')
         chrome_options.add_argument('--disable-gpu')
+        chrome_options.add_argument('--disable-software-rasterizer')
+        chrome_options.add_argument('--disable-extensions')
+        chrome_options.add_argument('--no-zygote')
+        chrome_options.add_argument('--single-process')
+        chrome_options.add_argument('--disable-features=VizDisplayCompositor,UseOzonePlatform')
+        chrome_options.add_argument('--remote-debugging-port=9222')
         chrome_options.add_argument('--window-size=1920,1080')
         
         # 设置用户数据目录，保存登录状态
@@ -77,9 +83,15 @@ class DiscordListener:
             self.driver = webdriver.Chrome(options=chrome_options)
         except Exception as e:
             logger.error(f"   通过 Selenium Manager 启动失败: {e}")
-            logger.info("   回退到系统 PATH 中的 chromedriver...")
-            # 回退到系统已有的 chromedriver（若存在）
-            self.driver = webdriver.Chrome(service=Service(), options=chrome_options)
+            logger.info("   回退到系统 chromedriver...")
+            # 回退到系统已有的 chromedriver（若存在）。优先查 PATH，否则使用常见路径。
+            try:
+                import shutil
+                chromedriver_path = shutil.which('chromedriver') or '/usr/bin/chromedriver'
+                self.driver = webdriver.Chrome(service=Service(executable_path=chromedriver_path), options=chrome_options)
+            except Exception as e2:
+                logger.error(f"   使用系统 chromedriver 启动失败: {e2}")
+                raise
         
         logger.info("✅ Chrome浏览器已成功启动")
     

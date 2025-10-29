@@ -9,7 +9,7 @@ import logging
 import threading
 import itchat
 from typing import Dict, Any
-from message_sender import MessageSender
+from .message_sender import MessageSender
 
 logger = logging.getLogger(__name__)
 

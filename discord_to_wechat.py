@@ -24,10 +24,10 @@ from config import (
 )
 
 # 导入各个模块
-from discord_listener import DiscordListener
-from message_sender import MessageSender
-from sender_wechat import WechatSender
-from sender_working_wechat import WorkingWechatSender
+from src.discord_listener import DiscordListener
+from src.sender.message_sender import MessageSender
+from src.sender.sender_wechat import WechatSender
+from src.sender.sender_working_wechat import WorkingWechatSender
 
 # 配置日志
 logging.basicConfig(

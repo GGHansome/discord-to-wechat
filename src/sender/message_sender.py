@@ -57,10 +57,23 @@ class MessageSender(ABC):
         :return: 格式化后的消息文本
         """
         from datetime import datetime
+        from dateutil import parser
+        from zoneinfo import ZoneInfo
         
+        # 解析 UTC 时间戳并转换为北京时间（Asia/Shanghai）
+        ts_value = message_info.get('timestamp')
+        try:
+            if ts_value:
+                bj_time = parser.isoparse(str(ts_value)).astimezone(ZoneInfo('Asia/Shanghai'))
+            else:
+                bj_time = datetime.now(ZoneInfo('Asia/Shanghai'))
+            bj_time_str = bj_time.strftime('%Y-%m-%d %H:%M:%S')
+        except Exception:
+            bj_time_str = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
+
         username = message_info.get('username', '未知用户')
         content = f"来自 {username} 消息\n"
-        content += f"🕐 时间: {datetime.now().strftime('%H:%M:%S')}\n"
+        content += f"🕐 时间: {bj_time_str}\n"
         content += f"━━━━━━━━━━━━\n"
         content += f"{message_info.get('content', '')}\n"
         

@@ -8,27 +8,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DEBIAN_FRONTEND=noninteractive \
     TZ=Asia/Shanghai
 
-# 安装系统依赖与 Google Chrome
-RUN apt-get update && apt-get install -y \
-    wget gnupg ca-certificates apt-transport-https \
+# 安装系统依赖与发行版 Chromium（APT 会自动拉取所需依赖）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wget ca-certificates unzip \
     fonts-noto-cjk locales tzdata \
-    # Chrome 运行所需依赖
-    libasound2 libatk1.0-0 libcups2 libdbus-1-3 libgdk-pixbuf2.0-0 libnspr4 \
-    libnss3 libx11-6 libx11-xcb1 libxcb1 libxcomposite1 libxcursor1 libxdamage1 \
-    libxext6 libxfixes3 libxi6 libxrandr2 libxrender1 libxss1 libxtst6 \
-    libglib2.0-0 libgbm1 libpangocairo-1.0-0 libpango-1.0-0 libatk-bridge2.0-0 \
-    libgtk-3-0 \
+    chromium chromium-driver \
     && rm -rf /var/lib/apt/lists/* \
     && echo "zh_CN.UTF-8 UTF-8" >> /etc/locale.gen \
     && locale-gen
 
-# 添加 Google Chrome 仓库并安装稳定版 Chrome
-RUN mkdir -p /etc/apt/keyrings \
-    && wget -qO- https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /etc/apt/keyrings/google-linux-signing-keyring.gpg \
-    && echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-linux-signing-keyring.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
-    && apt-get update \
-    && apt-get install -y google-chrome-stable \
-    && rm -rf /var/lib/apt/lists/*
+# 指定系统 Chromium 可执行路径，避免某些环境下探测失败
+ENV CHROME_BIN=/usr/bin/chromium
 
 # 创建工作目录
 WORKDIR /app

@@ -9,7 +9,9 @@ import logging
 import requests
 from typing import Dict, Any
 from datetime import datetime
-from message_sender import MessageSender
+from dateutil import parser
+from zoneinfo import ZoneInfo
+from .message_sender import MessageSender
 
 logger = logging.getLogger(__name__)
 
@@ -122,9 +124,20 @@ class WorkingWechatSender(MessageSender):
         :param channel_name: 频道名称
         :return: Markdown格式的消息文本
         """
+        # 解析 UTC 时间戳并转换为北京时间（Asia/Shanghai）
+        ts_value = message_info.get('timestamp')
+        try:
+            if ts_value:
+                bj_time = parser.isoparse(str(ts_value)).astimezone(ZoneInfo('Asia/Shanghai'))
+            else:
+                bj_time = datetime.now(ZoneInfo('Asia/Shanghai'))
+            bj_time_str = bj_time.strftime('%Y-%m-%d %H:%M:%S')
+        except Exception:
+            bj_time_str = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
+
         username = message_info.get('username', '未知用户')
         content = f"来自 **{username}** 消息\n"
-        content += f"> 🕐 时间: {datetime.now().strftime('%H:%M:%S')}\n\n"
+        content += f"> 🕐 时间: {bj_time_str}\n\n"
         
         content += f"{message_info.get('content', '')}\n"
         
