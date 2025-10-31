@@ -6,6 +6,7 @@ Discord消息监听器
 """
 
 import time
+import os
 import logging
 from datetime import datetime
 from typing import List, Dict, Any, Callable, Optional
@@ -71,7 +72,24 @@ class DiscordListener:
         chrome_options.add_argument('--window-size=1920,1080')
         
         # 设置用户数据目录，保存登录状态
-        chrome_options.add_argument('--user-data-dir=./chrome_data')
+        # 优先使用环境变量 CHROME_USER_DATA_DIR，默认使用 ./chrome_data
+        user_data_dir = os.path.abspath(os.environ.get('CHROME_USER_DATA_DIR', './chrome_data'))
+        try:
+            os.makedirs(user_data_dir, exist_ok=True)
+        except Exception as e:
+            logger.error(f"   创建用户数据目录失败，将终止启动: {e}")
+            raise
+
+        # 在启动前清理可能导致“已在使用”的锁文件（若无并发，安全）
+        for lock_name in ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'DevToolsActivePort']:
+            lock_path = os.path.join(user_data_dir, lock_name)
+            try:
+                if os.path.exists(lock_path):
+                    os.remove(lock_path)
+            except Exception:
+                pass
+
+        chrome_options.add_argument(f'--user-data-dir={user_data_dir}')
         
         # 禁用一些不必要的功能
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
@@ -82,16 +100,26 @@ class DiscordListener:
         try:
             self.driver = webdriver.Chrome(options=chrome_options)
         except Exception as e:
-            logger.error(f"   通过 Selenium Manager 启动失败: {e}")
-            logger.info("   回退到系统 chromedriver...")
-            # 回退到系统已有的 chromedriver（若存在）。优先查 PATH，否则使用常见路径。
-            try:
-                import shutil
-                chromedriver_path = shutil.which('chromedriver') or '/usr/bin/chromedriver'
-                self.driver = webdriver.Chrome(service=Service(executable_path=chromedriver_path), options=chrome_options)
-            except Exception as e2:
-                logger.error(f"   使用系统 chromedriver 启动失败: {e2}")
+            err_msg = str(e)
+            logger.error(f"   通过 Selenium Manager 启动失败: {err_msg}")
+
+            # 若因 user-data-dir 被占用，直接报错，不切换临时目录
+            if 'user data directory is already in use' in err_msg.lower():
+                logger.error(
+                    f"   用户数据目录被占用，终止启动。目录: {user_data_dir}\n"
+                    "   请确保没有其他进程/容器占用该目录，或清理残留锁文件"
+                )
                 raise
+            else:
+                logger.info("   回退到系统 chromedriver...")
+                # 回退到系统已有的 chromedriver（若存在）。优先查 PATH，否则使用常见路径。
+                try:
+                    import shutil
+                    chromedriver_path = shutil.which('chromedriver') or '/usr/bin/chromedriver'
+                    self.driver = webdriver.Chrome(service=Service(executable_path=chromedriver_path), options=chrome_options)
+                except Exception as e2:
+                    logger.error(f"   使用系统 chromedriver 启动失败: {e2}")
+                    raise
         
         logger.info("✅ Chrome浏览器已成功启动")
     
