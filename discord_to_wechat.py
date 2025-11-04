@@ -19,8 +19,7 @@ from config import (
     WECHAT_RECEIVER_NAME,
     ENTERPRISE_WECHAT_WEBHOOK,
     CHECK_INTERVAL,
-    HEADLESS_MODE,
-    LOG_FILE
+    HEADLESS_MODE
 )
 
 # 导入各个模块
@@ -34,7 +33,6 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[
-        logging.FileHandler(LOG_FILE, encoding='utf-8'),
         logging.StreamHandler()
     ]
 )
@@ -249,7 +247,6 @@ def print_startup_info():
     logger.info(f"\n⚙️  运行配置:")
     logger.info(f"   检查间隔: {CHECK_INTERVAL} 秒")
     logger.info(f"   无头模式: {'是' if HEADLESS_MODE else '否'}")
-    logger.info(f"   日志文件: {LOG_FILE}")
     logger.info("=" * 60 + "\n")
 
 

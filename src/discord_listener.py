@@ -6,8 +6,8 @@ Discord消息监听器
 """
 
 import time
-import os
 import logging
+import os
 from datetime import datetime
 from typing import List, Dict, Any, Callable, Optional
 from selenium import webdriver
@@ -18,6 +18,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException, TimeoutException
 import subprocess
+import shutil
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,31 @@ class DiscordListener:
         logger.info("⏳ 正在配置Chrome浏览器...")
         
         chrome_options = Options()
+        # 加快页面返回，避免等待所有资源完全加载导致卡住
+        try:
+            chrome_options.page_load_strategy = 'eager'
+        except Exception:
+            pass
+        
+        # 优先支持远程 Selenium（如 selenium/standalone-chrome）
+        remote_url = os.getenv('SELENIUM_REMOTE_URL')
+        if remote_url:
+            if self.headless_mode:
+                chrome_options.add_argument('--headless=new')
+            chrome_options.add_argument('--window-size=1920,1080')
+            # 设置用户数据目录，对应 docker-compose.yml 中映射的目录
+            # 使用独立目录避免与selenium默认配置冲突
+            chrome_options.add_argument('--user-data-dir=/home/seluser/discord-chrome-data')
+            # 使用Default配置文件
+            chrome_options.add_argument('--profile-directory=Default')
+            try:
+                logger.info(f"   使用远程 Selenium: {remote_url}")
+                self.driver = webdriver.Remote(command_executor=remote_url, options=chrome_options)
+                logger.info("✅ Chrome浏览器已成功启动(远程)")
+                return
+            except Exception as e:
+                logger.error(f"   连接远程 Selenium 失败: {e}")
+                raise
         
         # 无头模式配置
         if self.headless_mode:
@@ -66,30 +92,12 @@ class DiscordListener:
         chrome_options.add_argument('--disable-software-rasterizer')
         chrome_options.add_argument('--disable-extensions')
         chrome_options.add_argument('--no-zygote')
-        chrome_options.add_argument('--single-process')
         chrome_options.add_argument('--disable-features=VizDisplayCompositor,UseOzonePlatform')
         chrome_options.add_argument('--remote-debugging-port=9222')
         chrome_options.add_argument('--window-size=1920,1080')
         
         # 设置用户数据目录，保存登录状态
-        # 优先使用环境变量 CHROME_USER_DATA_DIR，默认使用 ./chrome_data
-        user_data_dir = os.path.abspath(os.environ.get('CHROME_USER_DATA_DIR', './chrome_data'))
-        try:
-            os.makedirs(user_data_dir, exist_ok=True)
-        except Exception as e:
-            logger.error(f"   创建用户数据目录失败，将终止启动: {e}")
-            raise
-
-        # 在启动前清理可能导致“已在使用”的锁文件（若无并发，安全）
-        for lock_name in ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'DevToolsActivePort']:
-            lock_path = os.path.join(user_data_dir, lock_name)
-            try:
-                if os.path.exists(lock_path):
-                    os.remove(lock_path)
-            except Exception:
-                pass
-
-        chrome_options.add_argument(f'--user-data-dir={user_data_dir}')
+        chrome_options.add_argument('--user-data-dir=./chrome_data')
         
         # 禁用一些不必要的功能
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
@@ -100,26 +108,15 @@ class DiscordListener:
         try:
             self.driver = webdriver.Chrome(options=chrome_options)
         except Exception as e:
-            err_msg = str(e)
-            logger.error(f"   通过 Selenium Manager 启动失败: {err_msg}")
-
-            # 若因 user-data-dir 被占用，直接报错，不切换临时目录
-            if 'user data directory is already in use' in err_msg.lower():
-                logger.error(
-                    f"   用户数据目录被占用，终止启动。目录: {user_data_dir}\n"
-                    "   请确保没有其他进程/容器占用该目录，或清理残留锁文件"
-                )
+            logger.error(f"   通过 Selenium Manager 启动失败: {e}")
+            logger.info("   回退到系统 chromedriver...")
+            # 回退到系统已有的 chromedriver（若存在）。优先查 PATH，否则使用常见路径。
+            try:
+                chromedriver_path = shutil.which('chromedriver') or '/usr/bin/chromedriver'
+                self.driver = webdriver.Chrome(service=Service(executable_path=chromedriver_path), options=chrome_options)
+            except Exception as e2:
+                logger.error(f"   使用系统 chromedriver 启动失败: {e2}")
                 raise
-            else:
-                logger.info("   回退到系统 chromedriver...")
-                # 回退到系统已有的 chromedriver（若存在）。优先查 PATH，否则使用常见路径。
-                try:
-                    import shutil
-                    chromedriver_path = shutil.which('chromedriver') or '/usr/bin/chromedriver'
-                    self.driver = webdriver.Chrome(service=Service(executable_path=chromedriver_path), options=chrome_options)
-                except Exception as e2:
-                    logger.error(f"   使用系统 chromedriver 启动失败: {e2}")
-                    raise
         
         logger.info("✅ Chrome浏览器已成功启动")
     
@@ -135,12 +132,18 @@ class DiscordListener:
         if 'login' in current_url:
             logger.info("⚠️  请在浏览器中登录Discord...")
             logger.info("   提示：登录后会自动保存登录状态，下次不用再登录")
+            logger.info("   🌐 如果使用Docker，请访问 http://localhost:7900 在noVNC中登录")
+            logger.info("   🔑 noVNC密码: secret")
             
             # 等待用户登录完成
             while 'login' in self.driver.current_url:
                 time.sleep(2)
             
             logger.info("✅ Discord登录成功！")
+            logger.info("⏳ 正在保存登录状态，请稍候...")
+            # 登录成功后多等待几秒，确保Chrome有足够时间将会话数据写入磁盘
+            time.sleep(8)
+            logger.info("✅ 登录状态已保存")
         else:
             logger.info("✅ Discord已经登录，跳过登录步骤")
         

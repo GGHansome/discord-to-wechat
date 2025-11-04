@@ -1,18 +1,38 @@
 version: "3.9"
 services:
+  selenium:
+    network_mode: host
+    image: selenium/standalone-chrome:latest
+    container_name: selenium
+    shm_size: "2g"
+    ports:
+      - "7900:7900"  # noVNC 网页端口，可在浏览器内登录 Discord 以初始化资料
+      # - "5900:5900"  # 如需原生 VNC 客户端
+    volumes:
+      - ./selenium_data:/home/seluser/discord-chrome-data  # 使用命名卷持久化 WebDriver 的用户数据目录
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/opt/bin/check-grid.sh", "--host", "0.0.0.0", "--port", "4444"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
   discord-to-wechat:
+    network_mode: host
     image: discord-to-wechat:latest
     build: .
     container_name: discord-to-wechat
     environment:
       # 可选：覆盖 config.py 中的参数（如需）
       - TZ=Asia/Shanghai
+      - SELENIUM_REMOTE_URL=http://localhost:4444
     volumes:
-      - ./chrome_data:/app/chrome_data
-      - ./logs:/app/logs
       - ./config.py:/app/config.py:ro
-    # 允许 Chrome 在容器中运行
-    shm_size: "2g"
-    # 若需要特权可开启（一般不需要）：
-    # privileged: true
+    depends_on:
+      selenium:
+        condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  selenium_data:
+    driver: local

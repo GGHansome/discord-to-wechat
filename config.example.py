@@ -29,6 +29,3 @@ CHECK_INTERVAL = 30
 # Chrome配置
 HEADLESS_MODE = False  # 设为True则无头模式（不显示浏览器窗口）
 
-# 日志配置
-LOG_FILE = "discord_bridge.log"
-

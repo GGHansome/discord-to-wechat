@@ -2,3 +2,5 @@ config.py
 .specstory
 .cursorindexingignore
 chrome_data
+selenium_data
+logs/*.log
