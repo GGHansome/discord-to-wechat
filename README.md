@@ -130,6 +130,35 @@ docker compose -f docker-compose.yml -f docker-compose.linux.yml up -d --build
 docker compose up -d --build
 ```
 
+## 常见问题 (FAQ)
+
+### 1. Docker 启动报错 `SessionNotCreatedException: Chrome instance exited`
+
+**场景**：通常发生在**首次登录成功并重启服务后**（即第二次启动时）。
+
+如果遇到类似以下的报错：
+
+```text
+org.openqa.selenium.SessionNotCreatedException: Could not start a new session. Response code 500. Message: session not created: Chrome instance exited. Examine ChromeDriver verbose log to determine the cause.
+...
+Driver info: driver.version: unknown
+```
+
+**原因**：通常是因为 `selenium_data` 目录权限问题，或者上次异常退出导致残留了 Chrome 的锁文件（`SingletonLock` 等）。
+
+**解决方法**：
+
+运行初始化脚本以修复权限并清理锁文件：
+
+```bash
+bash bash/init_selenium.sh
+```
+
+然后重启容器：
+```bash
+docker compose restart
+```
+
 ## 说明
 
 - Docker 方式使用 Selenium 无头浏览器，通过 noVNC 提供远程访问
@@ -148,5 +177,3 @@ docker compose up -d --build
 │   └── init_selenium.sh   # 初始化脚本
 └── selenium_data/         # Docker 持久化数据（首次运行后生成）
 ```
-
-
