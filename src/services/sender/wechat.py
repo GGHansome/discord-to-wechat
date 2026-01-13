@@ -5,14 +5,13 @@
 使用itchat实现微信个人号消息发送功能
 """
 
-import logging
 import threading
 import itchat
-from typing import Dict, Any
-from .message_sender import MessageSender
+from .base import MessageSender
+from src.core.models import DiscordMessage
+from src.utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 
 class WechatSender(MessageSender):
     """微信个人号发送器"""
@@ -65,12 +64,10 @@ class WechatSender(MessageSender):
             self.is_ready = False
             return False
     
-    def send_message(self, message_info: Dict[str, Any], channel_name: str = "", **kwargs) -> bool:
+    def send_message(self, message: DiscordMessage) -> bool:
         """
         发送消息到微信
-        :param message_info: 消息信息
-        :param channel_name: 频道名称
-        :param kwargs: 其他可选参数
+        :param message: Discord消息对象
         :return: 是否发送成功
         """
         if not self.is_ready or not self.receiver:
@@ -79,11 +76,11 @@ class WechatSender(MessageSender):
         
         try:
             # 格式化消息
-            content = self.format_message(message_info, channel_name)
+            content = self.format_message(message)
             
             # 发送到微信
             itchat.send(content, toUserName=self.receiver['UserName'])
-            logger.info(f"✅ 消息已发送到微信: {message_info['content'][:30]}...")
+            logger.info(f"✅ 消息已发送到微信: {message.content[:30]}...")
             return True
             
         except Exception as e:

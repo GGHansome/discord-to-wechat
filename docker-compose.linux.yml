@@ -1,0 +1,15 @@
+services:
+  # Linux 部署可选：使用宿主机网络栈
+  # 适用于你在宿主机做了透明代理(TUN/iptables)并希望容器直接复用的场景
+  selenium:
+    network_mode: host
+    # host 网络模式下 ports 会被忽略，这里置空避免误导
+    ports: []
+
+  discord-to-wechat:
+    network_mode: host
+    environment:
+      # host 网络模式下，selenium 的 4444 端口直接在宿主机网络栈上监听
+      - SELENIUM_REMOTE_URL=http://localhost:4444/wd/hub
+
+

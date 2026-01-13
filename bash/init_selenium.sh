@@ -24,6 +24,8 @@ echo "🔓 设置目录权限为777..."
 chmod 777 ./selenium_data
 
 if [ $? -eq 0 ]; then
+    # 清理可能残留的 Chrome 锁文件（跨系统/异常退出时常见），避免 selenium 中 Chrome 启动失败
+    rm -f ./selenium_data/SingletonCookie ./selenium_data/SingletonLock ./selenium_data/SingletonSocket 2>/dev/null || true
     echo "✅ 权限设置成功"
     echo ""
     echo "📋 目录信息："

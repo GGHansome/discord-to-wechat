@@ -5,16 +5,17 @@
 使用企业微信机器人Webhook API发送消息
 """
 
-import logging
 import requests
-from typing import Dict, Any, List, Optional
+import time
+from typing import Dict, List, Optional
 from datetime import datetime
 from dateutil import parser
 from zoneinfo import ZoneInfo
-from .message_sender import MessageSender
+from .base import MessageSender
+from src.core.models import DiscordMessage
+from src.utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 
 class WorkingWechatSender(MessageSender):
     """企业微信机器人发送器"""
@@ -70,33 +71,43 @@ class WorkingWechatSender(MessageSender):
         logger.info(f"正在验证 {total_count} 个Webhook地址...")
         
         for i, hook_url in enumerate(hooks_to_test, 1):
-            try:
-                # 发送测试消息验证连接
-                test_data = {
-                    "msgtype": "text",
-                    "text": {
-                        "content": f"✅ 企业微信机器人初始化成功 ({i}/{total_count})\nDiscord消息桥接器已启动"
+            # 重试机制
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    # 发送测试消息验证连接
+                    test_data = {
+                        "msgtype": "text",
+                        "text": {
+                            "content": f"✅ 企业微信机器人初始化成功 ({i}/{total_count})\nDiscord消息桥接器已启动"
+                        }
                     }
-                }
-                
-                response = requests.post(
-                    hook_url,
-                    json=test_data,
-                    timeout=10
-                )
-                
-                result = response.json()
-                
-                if result.get('errcode') == 0:
-                    logger.info(f"✅ Webhook {i} 连接成功！")
-                    success_count += 1
-                else:
-                    logger.error(f"❌ Webhook {i} 连接失败: {result.get('errmsg', '未知错误')}")
                     
-            except requests.exceptions.RequestException as e:
-                logger.error(f"❌ Webhook {i} 连接失败: {e}")
-            except Exception as e:
-                logger.error(f"❌ Webhook {i} 初始化异常: {e}")
+                    response = requests.post(
+                        hook_url,
+                        json=test_data,
+                        timeout=(10, 30)  # 连接超时10秒，读取超时30秒
+                    )
+                    
+                    result = response.json()
+                    
+                    if result.get('errcode') == 0:
+                        logger.info(f"✅ Webhook {i} 连接成功！")
+                        success_count += 1
+                        break
+                    else:
+                        logger.error(f"❌ Webhook {i} 连接失败: {result.get('errmsg', '未知错误')}")
+                        break
+                        
+                except requests.exceptions.RequestException as e:
+                    if attempt < max_retries - 1:
+                        logger.warning(f"⚠️ Webhook {i} 连接尝试 {attempt + 1} 失败，正在重试... ({e})")
+                        time.sleep(2)
+                    else:
+                        logger.error(f"❌ Webhook {i} 连接失败: {e}")
+                except Exception as e:
+                    logger.error(f"❌ Webhook {i} 初始化异常: {e}")
+                    break
         
         if success_count > 0:
             logger.info(f"✅ 成功连接 {success_count}/{total_count} 个机器人的Webhook")
@@ -119,27 +130,25 @@ class WorkingWechatSender(MessageSender):
         # 如果没有特定匹配，但有默认的单个webhook，则使用它
         return self.webhook_url
 
-    def send_message(self, message_info: Dict[str, Any], channel_name: str = "", channel_url: str = "", **kwargs) -> bool:
+    def send_message(self, message: DiscordMessage) -> bool:
         """
         发送消息到企业微信群
-        :param message_info: 消息信息
-        :param channel_name: 频道名称
-        :param channel_url: 频道URL，用于选择对应的Webhook
+        :param message: Discord消息对象
         :return: 是否发送成功
         """
         if not self.is_ready:
             logger.warning("⚠️  企业微信机器人未就绪，跳过发送")
             return False
             
-        target_webhook = self.get_webhook_for_channel(channel_url)
+        target_webhook = self.get_webhook_for_channel(message.channel_url)
         
         if not target_webhook:
-            logger.warning(f"⚠️  未找到频道 [{channel_name}] 对应的Webhook配置，且无默认Webhook")
+            logger.warning(f"⚠️  未找到频道 [{message.channel_name}] 对应的Webhook配置，且无默认Webhook")
             return False
             
         try:
             # 使用Markdown格式发送消息
-            content = self._format_markdown_message(message_info, channel_name)
+            content = self._format_markdown_message(message)
             
             data = {
                 "msgtype": "markdown",
@@ -151,13 +160,13 @@ class WorkingWechatSender(MessageSender):
             response = requests.post(
                 target_webhook,
                 json=data,
-                timeout=10
+                timeout=(10, 30)
             )
             
             result = response.json()
             
             if result.get('errcode') == 0:
-                logger.info(f"✅ 消息已发送到企业微信: {message_info['content'][:30]}...")
+                logger.info(f"✅ 消息已发送到企业微信: {message.content[:30]}...")
                 return True
             else:
                 logger.error(f"❌ 发送企业微信消息失败: {result.get('errmsg', '未知错误')}")
@@ -170,37 +179,38 @@ class WorkingWechatSender(MessageSender):
             logger.error(f"❌ 发送企业微信消息异常: {e}")
             return False
     
-    def _format_markdown_message(self, message_info: Dict[str, Any], channel_name: str = "") -> str:
+    def _format_markdown_message(self, message: DiscordMessage) -> str:
         """
         格式化为Markdown消息
-        :param message_info: 消息信息
-        :param channel_name: 频道名称
+        :param message: Discord消息对象
         :return: Markdown格式的消息文本
         """
         # 解析 UTC 时间戳并转换为北京时间（Asia/Shanghai）
-        ts_value = message_info.get('timestamp')
         try:
-            if ts_value:
-                bj_time = parser.isoparse(str(ts_value)).astimezone(ZoneInfo('Asia/Shanghai'))
+            if message.timestamp:
+                if isinstance(message.timestamp, str):
+                    bj_time = parser.isoparse(message.timestamp).astimezone(ZoneInfo('Asia/Shanghai'))
+                elif isinstance(message.timestamp, datetime):
+                     bj_time = message.timestamp.astimezone(ZoneInfo('Asia/Shanghai'))
+                else:
+                    bj_time = datetime.now(ZoneInfo('Asia/Shanghai'))
             else:
                 bj_time = datetime.now(ZoneInfo('Asia/Shanghai'))
             bj_time_str = bj_time.strftime('%Y-%m-%d %H:%M:%S')
         except Exception:
             bj_time_str = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
 
-        username = message_info.get('username', '未知用户')
-        content = f"来自 **{username}** 消息"
-        if channel_name:
-            content += f" ({channel_name})"
+        content = f"来自 **{message.username}** 消息"
+        if message.channel_name:
+            content += f" ({message.channel_name})"
         content += f"\n"
         content += f"> 🕐 时间: {bj_time_str}\n\n"
         
-        content += f"{message_info.get('content', '')}\n"
+        content += f"{message.content}\n"
         
-        attachments = message_info.get('attachments', [])
-        if attachments:
-            content += f"\n**📎 附件({len(attachments)}):**\n"
-            for i, att in enumerate(attachments[:3], 1):
+        if message.attachments:
+            content += f"\n**📎 附件({len(message.attachments)}):**\n"
+            for i, att in enumerate(message.attachments[:3], 1):
                 content += f"{i}. [{att}]({att})\n"
         
         return content
@@ -219,3 +229,4 @@ class WorkingWechatSender(MessageSender):
             logger.info("   ✅ 企业微信机器人发送器已清理")
         except Exception as e:
             logger.debug(f"   清理企业微信发送器失败: {e}")
+
