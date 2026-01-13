@@ -65,11 +65,12 @@ class WechatSender(MessageSender):
             self.is_ready = False
             return False
     
-    def send_message(self, message_info: Dict[str, Any], channel_name: str = "") -> bool:
+    def send_message(self, message_info: Dict[str, Any], channel_name: str = "", **kwargs) -> bool:
         """
         发送消息到微信
         :param message_info: 消息信息
         :param channel_name: 频道名称
+        :param kwargs: 其他可选参数
         :return: 是否发送成功
         """
         if not self.is_ready or not self.receiver:

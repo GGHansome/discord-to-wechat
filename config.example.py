@@ -19,7 +19,22 @@ WECHAT_RECEIVER_NAME = ""  # 你大号在小号中的备注名或昵称
 # 获取方式：
 # 1. 在企业微信群中，点击群设置 -> 群机器人 -> 添加机器人
 # 2. 复制机器人的 Webhook 地址到下方
-ENTERPRISE_WECHAT_WEBHOOK = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcde"
+
+# 旧版配置（单个Webhook，所有频道消息都发到这里）
+# ENTERPRISE_WECHAT_WEBHOOK = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcde"
+
+# 新版配置（多Webhook映射，不同频道发到不同群）
+# 格式: [{'hook': 'Webhook地址', 'channel': 'Discord频道URL'}]
+ENTERPRISE_WECHAT_WEBHOOK_LIST = [
+    # {
+    #     'hook': 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxxxx',
+    #     'channel': 'https://discord.com/channels/123456789/987654321'
+    # },
+    # {
+    #     'hook': 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=yyyyy',
+    #     'channel': 'https://discord.com/channels/123456789/123456789'
+    # }
+]
 
 
 # 运行配置
@@ -28,4 +43,3 @@ CHECK_INTERVAL = 30
 
 # Chrome配置
 HEADLESS_MODE = False  # 设为True则无头模式（不显示浏览器窗口）
-

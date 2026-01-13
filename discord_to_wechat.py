@@ -10,17 +10,10 @@ Discord到微信/企业微信消息桥接器
 """
 
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, List
 
-# 导入配置
-from config import (
-    SENDER_TYPE,
-    DISCORD_CHANNEL_URLS,
-    WECHAT_RECEIVER_NAME,
-    ENTERPRISE_WECHAT_WEBHOOK,
-    CHECK_INTERVAL,
-    HEADLESS_MODE
-)
+# 导入配置模块
+import config
 
 # 导入各个模块
 from src.discord_listener import DiscordListener
@@ -49,6 +42,7 @@ class DiscordToWechatBridge:
         discord_channel_urls: list,
         wechat_receiver_name: str = None,
         enterprise_wechat_webhook: str = None,
+        enterprise_wechat_webhook_list: List[Dict[str, str]] = None,
         check_interval: int = 3,
         headless_mode: bool = False
     ):
@@ -57,7 +51,8 @@ class DiscordToWechatBridge:
         :param sender_type: 发送器类型 ("wechat" 或 "enterprise_wechat")
         :param discord_channel_urls: Discord频道的URL列表
         :param wechat_receiver_name: 微信接收者的备注名或昵称（微信个人号时使用）
-        :param enterprise_wechat_webhook: 企业微信机器人Webhook地址
+        :param enterprise_wechat_webhook: 企业微信机器人Webhook地址 (旧版)
+        :param enterprise_wechat_webhook_list: 企业微信机器人Webhook配置列表 (新版)
         :param check_interval: 检查间隔（秒）
         :param headless_mode: 是否使用无头模式
         """
@@ -70,7 +65,8 @@ class DiscordToWechatBridge:
         self.sender = self._create_sender(
             sender_type,
             wechat_receiver_name,
-            enterprise_wechat_webhook
+            enterprise_wechat_webhook,
+            enterprise_wechat_webhook_list
         )
         
         # 初始化Discord监听器
@@ -85,13 +81,15 @@ class DiscordToWechatBridge:
         self,
         sender_type: str,
         wechat_receiver_name: str = None,
-        enterprise_wechat_webhook: str = None
+        enterprise_wechat_webhook: str = None,
+        enterprise_wechat_webhook_list: List[Dict[str, str]] = None
     ) -> MessageSender:
         """
         创建消息发送器
         :param sender_type: 发送器类型
         :param wechat_receiver_name: 微信接收者名称
-        :param enterprise_wechat_webhook: 企业微信Webhook
+        :param enterprise_wechat_webhook: 企业微信Webhook (旧版)
+        :param enterprise_wechat_webhook_list: 企业微信Webhook列表 (新版)
         :return: 消息发送器实例
         """
         if sender_type == "wechat":
@@ -103,24 +101,36 @@ class DiscordToWechatBridge:
         
         elif sender_type == "enterprise_wechat":
             logger.info("🤖 使用发送方式: 企业微信机器人")
-            if not enterprise_wechat_webhook or "YOUR_WEBHOOK_KEY" in enterprise_wechat_webhook:
-                logger.error("❌ 请先在 config.py 中配置 ENTERPRISE_WECHAT_WEBHOOK")
+            
+            # 优先检查新的列表配置
+            has_list_config = enterprise_wechat_webhook_list and len(enterprise_wechat_webhook_list) > 0
+            # 检查旧的单个配置
+            has_single_config = enterprise_wechat_webhook and "YOUR_WEBHOOK_KEY" not in enterprise_wechat_webhook
+            
+            if not has_list_config and not has_single_config:
+                logger.error("❌ 请先在 config.py 中配置 ENTERPRISE_WECHAT_WEBHOOK_LIST 或 ENTERPRISE_WECHAT_WEBHOOK")
                 raise ValueError("企业微信Webhook未配置")
-            return WorkingWechatSender(webhook_url=enterprise_wechat_webhook)
+            
+            return WorkingWechatSender(
+                webhook_url=enterprise_wechat_webhook,
+                webhook_configs=enterprise_wechat_webhook_list
+            )
         
         else:
             logger.error(f"❌ 不支持的发送器类型: {sender_type}")
             logger.error("   支持的类型: wechat, enterprise_wechat")
             raise ValueError(f"不支持的发送器类型: {sender_type}")
     
-    def _on_new_message(self, message_info: Dict[str, Any], channel_name: str):
+    def _on_new_message(self, message_info: Dict[str, Any], channel_name: str, channel_url: str = ""):
         """
         新消息回调函数
         :param message_info: 消息信息
         :param channel_name: 频道名称
+        :param channel_url: 频道URL
         """
         # 发送消息
-        self.sender.send_message(message_info, channel_name)
+        # 统一接口调用，所有 Sender 都已支持 kwargs 参数
+        self.sender.send_message(message_info, channel_name, channel_url=channel_url)
     
     def run(self):
         """运行主程序"""
@@ -186,39 +196,31 @@ class DiscordToWechatBridge:
 def validate_config():
     """验证配置是否正确"""
     # 检查Discord配置
-    if not DISCORD_CHANNEL_URLS or len(DISCORD_CHANNEL_URLS) == 0:
+    if not config.DISCORD_CHANNEL_URLS or len(config.DISCORD_CHANNEL_URLS) == 0:
         logger.error("❌ 请先在 config.py 中配置 DISCORD_CHANNEL_URLS")
-        logger.error("   格式: DISCORD_CHANNEL_URLS = [")
-        logger.error("       \"https://discord.com/channels/服务器ID/频道ID\",")
-        logger.error("   ]")
         return False
     
-    # 检查是否包含占位符
-    for url in DISCORD_CHANNEL_URLS:
-        if "服务器ID" in url or url.endswith("/频道ID"):
-            logger.error("❌ 请先在 config.py 中配置正确的 Discord 频道 URL")
-            logger.error("   格式: https://discord.com/channels/服务器ID/频道ID")
-            return False
-    
     # 检查发送器类型
-    if SENDER_TYPE not in ["wechat", "enterprise_wechat"]:
-        logger.error(f"❌ SENDER_TYPE 配置错误: {SENDER_TYPE}")
-        logger.error("   支持的值: wechat 或 enterprise_wechat")
+    if config.SENDER_TYPE not in ["wechat", "enterprise_wechat"]:
+        logger.error(f"❌ SENDER_TYPE 配置错误: {config.SENDER_TYPE}")
         return False
     
     # 根据发送器类型检查相应配置
-    if SENDER_TYPE == "wechat":
-        if "你的大号" in WECHAT_RECEIVER_NAME or WECHAT_RECEIVER_NAME == "na":
+    if config.SENDER_TYPE == "wechat":
+        if "你的大号" in config.WECHAT_RECEIVER_NAME or config.WECHAT_RECEIVER_NAME == "na":
             logger.error("❌ 请先在 config.py 中配置 WECHAT_RECEIVER_NAME")
-            logger.error("   填写你大号在小号微信中的备注名或昵称")
             return False
     
-    elif SENDER_TYPE == "enterprise_wechat":
-        if "YOUR_WEBHOOK_KEY" in ENTERPRISE_WECHAT_WEBHOOK:
-            logger.error("❌ 请先在 config.py 中配置 ENTERPRISE_WECHAT_WEBHOOK")
-            logger.error("   获取方式：")
-            logger.error("   1. 在企业微信群中，点击群设置 -> 群机器人 -> 添加机器人")
-            logger.error("   2. 复制机器人的 Webhook 地址到 config.py")
+    elif config.SENDER_TYPE == "enterprise_wechat":
+        # 获取可能存在的配置
+        webhook = getattr(config, 'ENTERPRISE_WECHAT_WEBHOOK', None)
+        webhook_list = getattr(config, 'ENTERPRISE_WECHAT_WEBHOOK_LIST', None)
+        
+        valid_list = webhook_list and len(webhook_list) > 0
+        valid_single = webhook and "YOUR_WEBHOOK_KEY" not in webhook
+        
+        if not valid_list and not valid_single:
+            logger.error("❌ 请先在 config.py 中配置 ENTERPRISE_WECHAT_WEBHOOK_LIST 或 ENTERPRISE_WECHAT_WEBHOOK")
             return False
     
     return True
@@ -231,22 +233,26 @@ def print_startup_info():
     logger.info("=" * 60)
     
     # 发送方式信息
-    if SENDER_TYPE == "wechat":
+    if config.SENDER_TYPE == "wechat":
         logger.info("📱 发送方式: 微信个人号")
-        logger.info(f"👤 接收者: {WECHAT_RECEIVER_NAME}")
-    elif SENDER_TYPE == "enterprise_wechat":
+        logger.info(f"👤 接收者: {config.WECHAT_RECEIVER_NAME}")
+    elif config.SENDER_TYPE == "enterprise_wechat":
         logger.info("🤖 发送方式: 企业微信机器人")
-        logger.info(f"🔗 Webhook: {ENTERPRISE_WECHAT_WEBHOOK[:50]}...")
+        
+        webhook_list = getattr(config, 'ENTERPRISE_WECHAT_WEBHOOK_LIST', None)
+        if webhook_list:
+             logger.info(f"🔗 已配置 {len(webhook_list)} 个Webhook映射")
+        else:
+             webhook = getattr(config, 'ENTERPRISE_WECHAT_WEBHOOK', "")
+             logger.info(f"🔗 Webhook: {webhook[:30]}...")
     
     # Discord频道信息
-    logger.info(f"\n📋 监控 {len(DISCORD_CHANNEL_URLS)} 个Discord频道:")
-    for idx, url in enumerate(DISCORD_CHANNEL_URLS, 1):
-        logger.info(f"   [{idx}] {url}")
+    logger.info(f"\n📋 监控 {len(config.DISCORD_CHANNEL_URLS)} 个Discord频道")
     
     # 运行配置
     logger.info(f"\n⚙️  运行配置:")
-    logger.info(f"   检查间隔: {CHECK_INTERVAL} 秒")
-    logger.info(f"   无头模式: {'是' if HEADLESS_MODE else '否'}")
+    logger.info(f"   检查间隔: {config.CHECK_INTERVAL} 秒")
+    logger.info(f"   无头模式: {'是' if config.HEADLESS_MODE else '否'}")
     logger.info("=" * 60 + "\n")
 
 
@@ -259,15 +265,20 @@ def main():
     # 打印启动信息
     print_startup_info()
     
+    # 获取配置项（安全获取）
+    enterprise_wechat_webhook = getattr(config, 'ENTERPRISE_WECHAT_WEBHOOK', None)
+    enterprise_wechat_webhook_list = getattr(config, 'ENTERPRISE_WECHAT_WEBHOOK_LIST', None)
+    
     # 创建并运行桥接器
     try:
         bridge = DiscordToWechatBridge(
-            sender_type=SENDER_TYPE,
-            discord_channel_urls=DISCORD_CHANNEL_URLS,
-            wechat_receiver_name=WECHAT_RECEIVER_NAME,
-            enterprise_wechat_webhook=ENTERPRISE_WECHAT_WEBHOOK,
-            check_interval=CHECK_INTERVAL,
-            headless_mode=HEADLESS_MODE
+            sender_type=config.SENDER_TYPE,
+            discord_channel_urls=config.DISCORD_CHANNEL_URLS,
+            wechat_receiver_name=config.WECHAT_RECEIVER_NAME,
+            enterprise_wechat_webhook=enterprise_wechat_webhook,
+            enterprise_wechat_webhook_list=enterprise_wechat_webhook_list,
+            check_interval=config.CHECK_INTERVAL,
+            headless_mode=config.HEADLESS_MODE
         )
         
         bridge.run()

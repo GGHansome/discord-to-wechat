@@ -25,11 +25,12 @@ class MessageSender(ABC):
         pass
     
     @abstractmethod
-    def send_message(self, message_info: Dict[str, Any], channel_name: str = "") -> bool:
+    def send_message(self, message_info: Dict[str, Any], channel_name: str = "", **kwargs) -> bool:
         """
         发送消息
         :param message_info: 消息信息字典，包含 username, content, timestamp, attachments 等
         :param channel_name: 频道名称
+        :param kwargs: 其他可选参数（如 channel_url）
         :return: 是否发送成功
         """
         pass

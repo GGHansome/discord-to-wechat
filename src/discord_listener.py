@@ -29,14 +29,14 @@ class DiscordListener:
     def __init__(
         self,
         channel_urls: List[str],
-        on_new_message: Callable[[Dict[str, Any], str], None],
+        on_new_message: Callable[[Dict[str, Any], str, str], None],
         check_interval: int = 3,
         headless_mode: bool = False
     ):
         """
         初始化Discord监听器
         :param channel_urls: Discord频道URL列表
-        :param on_new_message: 新消息回调函数，参数为 (message_info, channel_url)
+        :param on_new_message: 新消息回调函数，参数为 (message_info, channel_name, channel_url)
         :param check_interval: 检查间隔（秒）
         :param headless_mode: 是否使用无头模式
         """
@@ -516,7 +516,7 @@ class DiscordListener:
                                     
                                     # 调用回调函数处理消息
                                     channel_name = self.get_channel_name(channel_url)
-                                    self.on_new_message(message_info, channel_name)
+                                    self.on_new_message(message_info, channel_name, channel_url)
                                     
                                     # 更新该频道最后处理的消息ID
                                     self.last_message_ids[channel_url] = message_info['id']
