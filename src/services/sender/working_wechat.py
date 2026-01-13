@@ -6,7 +6,6 @@
 """
 
 import requests
-import time
 from typing import Dict, List, Optional
 from datetime import datetime
 from dateutil import parser
@@ -71,43 +70,33 @@ class WorkingWechatSender(MessageSender):
         logger.info(f"正在验证 {total_count} 个Webhook地址...")
         
         for i, hook_url in enumerate(hooks_to_test, 1):
-            # 重试机制
-            max_retries = 3
-            for attempt in range(max_retries):
-                try:
-                    # 发送测试消息验证连接
-                    test_data = {
-                        "msgtype": "text",
-                        "text": {
-                            "content": f"✅ 企业微信机器人初始化成功 ({i}/{total_count})\nDiscord消息桥接器已启动"
-                        }
+            try:
+                # 发送测试消息验证连接
+                test_data = {
+                    "msgtype": "text",
+                    "text": {
+                        "content": f"✅ 企业微信机器人初始化成功 ({i}/{total_count})\nDiscord消息桥接器已启动"
                     }
+                }
+                
+                response = requests.post(
+                    hook_url,
+                    json=test_data,
+                    timeout=30
+                )
+                
+                result = response.json()
+                
+                if result.get('errcode') == 0:
+                    logger.info(f"✅ Webhook {i} 连接成功！")
+                    success_count += 1
+                else:
+                    logger.error(f"❌ Webhook {i} 连接失败: {result.get('errmsg', '未知错误')}")
                     
-                    response = requests.post(
-                        hook_url,
-                        json=test_data,
-                        timeout=(10, 30)  # 连接超时10秒，读取超时30秒
-                    )
-                    
-                    result = response.json()
-                    
-                    if result.get('errcode') == 0:
-                        logger.info(f"✅ Webhook {i} 连接成功！")
-                        success_count += 1
-                        break
-                    else:
-                        logger.error(f"❌ Webhook {i} 连接失败: {result.get('errmsg', '未知错误')}")
-                        break
-                        
-                except requests.exceptions.RequestException as e:
-                    if attempt < max_retries - 1:
-                        logger.warning(f"⚠️ Webhook {i} 连接尝试 {attempt + 1} 失败，正在重试... ({e})")
-                        time.sleep(2)
-                    else:
-                        logger.error(f"❌ Webhook {i} 连接失败: {e}")
-                except Exception as e:
-                    logger.error(f"❌ Webhook {i} 初始化异常: {e}")
-                    break
+            except requests.exceptions.RequestException as e:
+                logger.error(f"❌ Webhook {i} 连接失败: {e}")
+            except Exception as e:
+                logger.error(f"❌ Webhook {i} 初始化异常: {e}")
         
         if success_count > 0:
             logger.info(f"✅ 成功连接 {success_count}/{total_count} 个机器人的Webhook")
@@ -160,7 +149,7 @@ class WorkingWechatSender(MessageSender):
             response = requests.post(
                 target_webhook,
                 json=data,
-                timeout=(10, 30)
+                timeout=10
             )
             
             result = response.json()
