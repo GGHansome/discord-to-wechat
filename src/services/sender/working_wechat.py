@@ -190,8 +190,8 @@ class WorkingWechatSender(MessageSender):
             bj_time_str = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
 
         content = f"来自 **{message.username}** 消息"
-        if message.channel_name:
-            content += f" ({message.channel_name})"
+        # if message.channel_name:
+        #     content += f" ({message.channel_name})"
         content += f"\n"
         content += f"> 🕐 时间: {bj_time_str}\n\n"
         

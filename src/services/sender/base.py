@@ -74,8 +74,8 @@ class MessageSender(ABC):
             bj_time_str = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M:%S')
 
         content = f"来自 {message.username} 消息\n"
-        if message.channel_name:
-             content += f"({message.channel_name})\n"
+        # if message.channel_name:
+        #      content += f"({message.channel_name})\n"
         content += f"🕐 时间: {bj_time_str}\n"
         content += f"━━━━━━━━━━━━\n"
         content += f"{message.content}\n"
