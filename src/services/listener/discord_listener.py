@@ -66,7 +66,7 @@ class DiscordListener:
             logger.info("⚠️  请在浏览器中登录Discord...")
             logger.info("   提示：登录后会自动保存登录状态，下次不用再登录")
             logger.info("   🌐 如果使用Docker，请访问 http://localhost:7900 在noVNC中登录")
-            logger.info("   🔑 noVNC密码: secret")
+            logger.info("   🔑 noVNC默认密码: secret")
             
             # 等待用户登录完成
             while 'login' in self.driver.current_url:
@@ -83,95 +83,105 @@ class DiscordListener:
         # 等待几秒让页面完全加载
         time.sleep(3)
     
+    def restart_browser(self):
+        """重启浏览器并重新登录"""
+        logger.info("♻️ 正在重启浏览器...")
+        try:
+            if self.driver:
+                self.driver.quit()
+        except Exception:
+            pass
+            
+        self.channel_handles = {}
+        self.init_chrome()
+        self.login_discord()
+        logger.info("✅ 浏览器重启完成")
+
     def navigate_to_channel(self, channel_url: Optional[str] = None):
         """打开/切换到指定频道"""
         if channel_url:
             self.switch_to_channel(channel_url)
         else:
-            self.open_all_channels_in_tabs()
+            # 初始化打开所有频道
+            logger.info(f"⏳ 正在打开 {len(self.channel_urls)} 个频道...")
+            for idx, url in enumerate(self.channel_urls, 1):
+                logger.info(f"   [{idx}/{len(self.channel_urls)}] {url}")
+                self.switch_to_channel(url)
+                # 稍微等待，避免操作过快
+                time.sleep(2)
 
-    def open_all_channels_in_tabs(self):
-        """将所有频道分别在独立标签页中打开并记录句柄"""
-        logger.info(f"⏳ 正在打开 {len(self.channel_urls)} 个频道...")
-        for idx, url in enumerate(self.channel_urls, 1):
-            logger.info(f"   [{idx}/{len(self.channel_urls)}] {url}")
-            if idx == 1:
-                # 第一个频道使用当前标签页
-                self.driver.get(url)
-                time.sleep(5)
-                self.channel_handles[url] = self.driver.current_window_handle
-            else:
-                try:
-                    # 直接新开标签并导航到该URL
-                    self.driver.execute_script("window.open(arguments[0], '_blank');", url)
-                    time.sleep(1)
-                    # 取出新增的句柄
-                    known_handles = set(self.channel_handles.values())
-                    for handle in self.driver.window_handles:
-                        if handle not in known_handles:
-                            self.driver.switch_to.window(handle)
-                            break
-                    # 记录该频道的句柄
-                    self.channel_handles[url] = self.driver.current_window_handle
-                    # 等待频道主要消息节点出现
-                    try:
-                        WebDriverWait(self.driver, 10).until(
-                            EC.presence_of_element_located((By.CSS_SELECTOR, 'li[id^="chat-messages-"]'))
-                        )
-                    except Exception:
-                        pass
-                except Exception as e:
-                    logger.warning(f"打开频道标签页失败，回退为当前页导航: {e}")
-                    self.driver.get(url)
-                    time.sleep(3)
-                    self.channel_handles[url] = self.driver.current_window_handle
-        # 切回第一个频道
-        first_handle = self.channel_handles.get(self.channel_urls[0])
-        if first_handle:
-            try:
-                self.driver.switch_to.window(first_handle)
-            except Exception:
-                pass
-        logger.info("✅ 频道已成功打开")
+            # 切回第一个频道
+            if self.channel_urls:
+                self.switch_to_channel(self.channel_urls[0])
+            logger.info("✅ 频道已成功打开")
 
     def switch_to_channel(self, channel_url: str) -> bool:
         """切换到指定频道对应的标签页"""
         try:
+            # 1. 尝试直接使用缓存的句柄
             handle = self.channel_handles.get(channel_url)
             # 句柄存在且有效
             if handle and handle in self.driver.window_handles:
-                if self.driver.current_window_handle != handle:
+                # 获取当前窗口句柄，如果当前窗口已关闭，设为 None
+                try:
+                    current_handle = self.driver.current_window_handle
+                except Exception:
+                    current_handle = None
+
+                if current_handle != handle:
                     logger.info("⏳ 正在切换到频道标签页...")
-                    logger.info(f"   URL: {channel_url}")
+                    # logger.info(f"   URL: {channel_url}")
                     self.driver.switch_to.window(handle)
                     time.sleep(0.1)
                 return True
 
-            # 尝试通过已开启的标签页反查URL匹配的句柄
-            for h in self.driver.window_handles:
-                try:
-                    self.driver.switch_to.window(h)
-                    current = (self.driver.current_url or '').strip()
-                    if current.startswith(channel_url) or channel_url in current:
-                        self.channel_handles[channel_url] = h
-                        return True
-                except Exception:
-                    continue
+            # 2. 尝试通过已开启的标签页反查URL匹配的句柄
+            # for h in self.driver.window_handles:
+            #     try:
+            #         self.driver.switch_to.window(h)
+            #         current = (self.driver.current_url or '').strip()
+            #         if current.startswith(channel_url) or channel_url in current:
+            #             self.channel_handles[channel_url] = h
+            #             return True
+            #     except Exception:
+            #         continue
+            # 2. (已移除) 不需要反查现有标签页，直接根据缓存或新建
+            # 这里的反查逻辑会导致每次打开新频道时都遍历旧标签页，造成不必要的切换和闪烁。
+            # 既然是自动化程序，我们假设状态由程序控制，直接进入步骤 3 进行打开/新建。
+            # 它唯一的用处是：如果你的浏览器崩溃重启了，并且自动恢复了上次打开的 5 个频道标签页。
+            # 此时程序重启，通过“反查”可以直接复用这 5 个标签页，而不用新开 5 个。
 
-            # 未找到则新开标签页
+            # 3. 未找到则需要打开
+            # 如果是第一个初始化的频道（还没有任何句柄记录），则复用当前页面（如登录后的页面）
+            if not self.channel_handles:
+                logger.info(f"⏳ 初始化频道，覆盖当前页面: {channel_url}")
+                self.driver.get(channel_url)
+                self.channel_handles[channel_url] = self.driver.current_window_handle
+                time.sleep(1)
+                return True
+
+            # 否则新建标签页
             logger.info("⏳ 未找到频道标签页，正在新建...")
             logger.info(f"   URL: {channel_url}")
-            self.driver.execute_script("window.open(arguments[0], '_blank');", channel_url)
-            time.sleep(1)
-            # 记录新句柄
-            for h in self.driver.window_handles:
-                if h not in self.channel_handles.values():
-                    try:
-                        self.driver.switch_to.window(h)
-                        self.channel_handles[channel_url] = h
-                        break
-                    except Exception:
-                        continue
+            
+            # 确保在打开新窗口前有一个有效的上下文
+            # 如果当前窗口已关闭（例如用户手动关闭了标签页），switch_to.new_window 可能会失败
+            try:
+                self.driver.current_window_handle
+            except Exception:
+                # 当前窗口句柄失效，尝试切换到任意存在的窗口
+                try:
+                    if self.driver.window_handles:
+                        self.driver.switch_to.window(self.driver.window_handles[0])
+                except Exception:
+                    pass
+
+            # 遍历所有句柄查找未被记录的
+            # === 使用 Selenium 4 新 API ===
+            self.driver.switch_to.new_window('tab')
+            self.driver.get(channel_url)
+            self.channel_handles[channel_url] = self.driver.current_window_handle
+            
             return True
         except Exception as e:
             logger.error(f"切换频道标签页失败: {e}")
@@ -192,15 +202,16 @@ class DiscordListener:
         logger.info("✅ 所有准备工作已完成，开始监控消息...")
         logger.info(f"💡 正在监控 {len(self.channel_urls)} 个频道")
         
-        error_count = 0
+        # 为每个频道维护独立的错误计数器
+        channel_errors = {url: 0 for url in self.channel_urls}
         max_errors = 5
         
         while True:
             for channel_idx, channel_url in enumerate(self.channel_urls):
                 try:
                     if not self.switch_to_channel(channel_url):
-                        logger.warning(f"无法切换到频道 [{channel_idx + 1}]，跳过本轮")
-                        continue
+                        # 主动抛出异常，以便触发下方的错误计数和恢复逻辑
+                        raise Exception("无法切换到频道标签页 (Switch failed)")
                     
                     WebDriverWait(self.driver, 10).until(
                         EC.presence_of_element_located((By.CSS_SELECTOR, 'li[id^="chat-messages-"]'))
@@ -271,20 +282,57 @@ class DiscordListener:
                                     if len(new_messages) > 1 and idx < len(new_messages):
                                         time.sleep(0.5)
                     
-                    error_count = 0
+                    # 成功执行，重置该频道的错误计数
+                    channel_errors[channel_url] = 0
                     
                 except Exception as e:
-                    error_count += 1
-                    logger.error(f"⚠️  频道 [{channel_idx + 1}] 监控错误 ({error_count}/{max_errors}): {e}")
+                    channel_errors[channel_url] += 1
+                    current_errors = channel_errors[channel_url]
+                    logger.error(f"⚠️  频道 [{channel_idx + 1}] 监控错误 ({current_errors}/{max_errors}): {e}")
                     
-                    if error_count >= max_errors:
-                        logger.warning("❌ 错误次数过多，尝试重新加载页面...")
+                    if current_errors >= max_errors:
+                        logger.warning(f"❌ 频道 [{channel_idx + 1}] 错误次数过多，尝试重新加载页面...")
                         try:
                             self.driver.refresh()
                             time.sleep(5)
-                            error_count = 0
-                        except:
-                            logger.error("页面刷新失败，将在10秒后重试")
+                            channel_errors[channel_url] = 0
+                        except Exception as refresh_error:
+                            logger.error(f"页面刷新失败，可能是标签页崩溃: {refresh_error}")
+                            
+                            # 检查浏览器是否完全崩溃/关闭
+                            is_fatal = False
+                            try:
+                                if not self.driver.window_handles:
+                                    is_fatal = True
+                            except Exception:
+                                is_fatal = True
+                            
+                            if is_fatal:
+                                logger.error("🔥 检测到浏览器已关闭或崩溃，正在重启...")
+                                self.restart_browser()
+                                break # 跳出 for 循环，重新开始 while 循环
+
+                            logger.info("♻️ 尝试移除失效句柄，下次将重新打开该频道...")
+                            
+                            # 移除失效句柄，触发重新打开逻辑
+                            if channel_url in self.channel_handles:
+                                del self.channel_handles[channel_url]
+                            
+                            # 尝试关闭崩溃的标签页
+                            try:
+                                self.driver.close()
+                            except:
+                                pass
+                                
+                            # 重置错误计数
+                            channel_errors[channel_url] = 0
+                            
+                            # 尝试切回第一个可用窗口
+                            try:
+                                if len(self.driver.window_handles) > 0:
+                                    self.driver.switch_to.window(self.driver.window_handles[0])
+                            except:
+                                pass
                     
                     time.sleep(5)
             

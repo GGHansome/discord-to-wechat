@@ -7,6 +7,8 @@ services:
       - "7900:7900"  # noVNC 网页端口，可在浏览器内登录 Discord 以初始化资料
       - "4444:4444"  # Selenium WebDriver 端口（discord-to-wechat 通过它连接）
       # - "5900:5900"  # 如需原生 VNC 客户端
+    # environment:
+      # - SE_VNC_PASSWORD=mynewpassword  # 自定义 VNC 密码
     volumes:
       - ./selenium_data:/home/seluser/discord-chrome-data  # 使用命名卷持久化 WebDriver 的用户数据目录
     restart: unless-stopped
