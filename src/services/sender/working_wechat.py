@@ -149,7 +149,7 @@ class WorkingWechatSender(MessageSender):
             response = requests.post(
                 target_webhook,
                 json=data,
-                timeout=10
+                timeout=30
             )
             
             result = response.json()
