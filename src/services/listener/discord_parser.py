@@ -91,10 +91,36 @@ class DiscordParser:
 
     @staticmethod
     def _extract_content(element) -> str:
+        content_parts = []
         try:
-            content_elements = element.find_elements(By.CSS_SELECTOR, 'div[class*="messageContent"]')
+            # 1. 常规消息内容
+            content_elements = element.find_elements(By.CSS_SELECTOR, 'div[id^="message-content-"]')
+            if not content_elements:
+                content_elements = element.find_elements(By.CSS_SELECTOR, 'div[class*="messageContent"]')
             if content_elements:
-                return content_elements[-1].text
+                text = content_elements[-1].text.strip()
+                if text: content_parts.append(text)
+
+            # 2. Embed (被包裹) 消息内容 - Title
+            embed_titles = element.find_elements(By.CSS_SELECTOR, 'div[class*="embedTitle"]')
+            for title in embed_titles:
+                text = title.text.strip()
+                if text: content_parts.append(text)
+
+            # 3. Embed (被包裹) 消息内容 - Description
+            embed_descriptions = element.find_elements(By.CSS_SELECTOR, 'div[class*="embedDescription"]')
+            for desc in embed_descriptions:
+                text = desc.text.strip()
+                if text: content_parts.append(text)
+                
+            # 4. Embed (被包裹) 消息内容 - Fields
+            embed_fields = element.find_elements(By.CSS_SELECTOR, 'div[class*="embedFieldValue"]')
+            for field in embed_fields:
+                text = field.text.strip()
+                if text: content_parts.append(text)
+
+            if content_parts:
+                return "\n".join(content_parts)
         except Exception:
             pass
         return "[无法获取消息内容]"
@@ -167,6 +193,7 @@ class DiscordParser:
     @staticmethod
     def _finalize_content(content: str, attachments: List[str], element) -> str:
         if content == "[无法获取消息内容]" or not content.strip():
+            # 获取 markup
             try:
                 markup = element.find_elements(By.CSS_SELECTOR, 'div[class*="markup"]')
                 if markup and markup[-1].text.strip():
@@ -174,7 +201,11 @@ class DiscordParser:
             except Exception:
                 pass
             
-            if (not content or not content.strip()) and attachments:
-                content = f"[附件 {len(attachments)} 个]"
+            # 仍然获取不到时，看有没有附件
+            if content == "[无法获取消息内容]" or not content.strip():
+                if attachments:
+                    content = f"[附件 {len(attachments)} 个]"
+                else:
+                    content = "[无法获取消息内容]"
         return content
 
